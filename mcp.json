@@ -3,9 +3,8 @@
 		"mediawiki-mcp-server": {
 			"command": "node",
 			"args": [
-				"dist/index.js"
-			],
-			"cwd": "path/to/MediaWiki-MCP-Server"
+				"/path/to/MediaWiki-MCP-Server/dist/index.js"
+			]
 		}
 	}
 }
