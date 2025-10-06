@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult, TextContent, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 /* eslint-enable n/no-missing-import */
-import { makeRestPostRequest, getPageUrl, formatEditComment } from '../common/utils.js';
+import { makeAuthenticatedApiRequest, getPageUrl, formatEditComment, getCsrfToken } from '../common/utils.js';
 import type { MwRestApiPageObject } from '../types/mwRestApi.js';
 
 export function createPageTool( server: McpServer ): RegisteredTool {
@@ -33,16 +33,50 @@ async function handleCreatePageTool(
 	comment?: string,
 	contentModel?: string
 ): Promise<CallToolResult> {
-	let data: MwRestApiPageObject | null = null;
-
 	try {
-		data = await makeRestPostRequest<MwRestApiPageObject>( '/v1/page', {
-			source: source,
+		// Get CSRF token first
+		const csrfToken = await getCsrfToken();
+		if ( !csrfToken ) {
+			return {
+				content: [
+					{ type: 'text', text: 'Failed to create page: Could not obtain CSRF token' } as TextContent
+				],
+				isError: true
+			};
+		}
+
+		// Use Action API to create page
+		const data = await makeAuthenticatedApiRequest<{ edit: { result: string; pageid: number; title: string; oldrevid: number; newrevid: number } }>( {
+			action: 'edit',
 			title: title,
-			comment: formatEditComment( 'create-page', comment ),
-			// eslint-disable-next-line camelcase
-			content_model: contentModel
-		}, true );
+			text: source,
+			summary: formatEditComment( 'create-page', comment ),
+			token: csrfToken,
+			format: 'json',
+			...( contentModel && { contentmodel: contentModel } )
+		} );
+
+		if ( !data || !data.edit ) {
+			return {
+				content: [
+					{ type: 'text', text: 'Failed to create page: No data returned from API' } as TextContent
+				],
+				isError: true
+			};
+		}
+
+		if ( data.edit.result !== 'Success' ) {
+			return {
+				content: [
+					{ type: 'text', text: `Failed to create page: ${ data.edit.result }` } as TextContent
+				],
+				isError: true
+			};
+		}
+
+		return {
+			content: createPageToolResult( data.edit )
+		};
 	} catch ( error ) {
 		return {
 			content: [
@@ -51,22 +85,9 @@ async function handleCreatePageTool(
 			isError: true
 		};
 	}
-
-	if ( data === null ) {
-		return {
-			content: [
-				{ type: 'text', text: 'Failed to create page: No data returned from API' } as TextContent
-			],
-			isError: true
-		};
-	}
-
-	return {
-		content: createPageToolResult( data )
-	};
 }
 
-function createPageToolResult( result: MwRestApiPageObject ): TextContent[] {
+function createPageToolResult( result: { result: string; pageid: number; title: string; oldrevid: number; newrevid: number } ): TextContent[] {
 	return [
 		{
 			type: 'text',
@@ -76,13 +97,10 @@ function createPageToolResult( result: MwRestApiPageObject ): TextContent[] {
 			type: 'text',
 			text: [
 				'Page object:',
-				`Page ID: ${ result.id }`,
+				`Page ID: ${ result.pageid }`,
 				`Title: ${ result.title }`,
-				`Latest revision ID: ${ result.latest.id }`,
-				`Latest revision timestamp: ${ result.latest.timestamp }`,
-				`Content model: ${ result.content_model }`,
-				`License: ${ result.license.url } ${ result.license.title }`,
-				`HTML URL: ${ result.html_url }`
+				`Latest revision ID: ${ result.newrevid }`,
+				`Result: ${ result.result }`
 			].join( '\n' )
 		}
 	];

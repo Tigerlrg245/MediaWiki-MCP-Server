@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult, TextContent, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 /* eslint-enable n/no-missing-import */
-import { makeRestPutRequest, getPageUrl, formatEditComment } from '../common/utils.js';
+import { makeAuthenticatedApiRequest, getPageUrl, formatEditComment, getCsrfToken } from '../common/utils.js';
 import type { MwRestApiPageObject } from '../types/mwRestApi.js';
 
 export function updatePageTool( server: McpServer ): RegisteredTool {
@@ -33,13 +33,50 @@ async function handleUpdatePageTool(
 	latestId: number,
 	comment?: string
 ): Promise<CallToolResult> {
-	let data: MwRestApiPageObject | null = null;
 	try {
-		data = await makeRestPutRequest<MwRestApiPageObject>( `/v1/page/${ encodeURIComponent( title ) }`, {
-			source: source,
-			comment: formatEditComment( 'update-page', comment ),
-			latest: { id: latestId }
-		}, true );
+		// Get CSRF token first
+		const csrfToken = await getCsrfToken();
+		if ( !csrfToken ) {
+			return {
+				content: [
+					{ type: 'text', text: 'Failed to update page: Could not obtain CSRF token' } as TextContent
+				],
+				isError: true
+			};
+		}
+
+		// Use Action API to update page
+		const data = await makeAuthenticatedApiRequest<{ edit: { result: string; pageid: number; title: string; oldrevid: number; newrevid: number } }>( {
+			action: 'edit',
+			title: title,
+			text: source,
+			summary: formatEditComment( 'update-page', comment ),
+			token: csrfToken,
+			format: 'json',
+			baserevid: latestId.toString()
+		} );
+
+		if ( !data || !data.edit ) {
+			return {
+				content: [
+					{ type: 'text', text: 'Failed to update page: No data returned from API' } as TextContent
+				],
+				isError: true
+			};
+		}
+
+		if ( data.edit.result !== 'Success' ) {
+			return {
+				content: [
+					{ type: 'text', text: `Failed to update page: ${ data.edit.result }` } as TextContent
+				],
+				isError: true
+			};
+		}
+
+		return {
+			content: updatePageToolResult( data.edit )
+		};
 	} catch ( error ) {
 		return {
 			content: [
@@ -48,22 +85,9 @@ async function handleUpdatePageTool(
 			isError: true
 		};
 	}
-
-	if ( data === null ) {
-		return {
-			content: [
-				{ type: 'text', text: 'Failed to update page: No data returned from API' } as TextContent
-			],
-			isError: true
-		};
-	}
-
-	return {
-		content: updatePageToolResult( data )
-	};
 }
 
-function updatePageToolResult( result: MwRestApiPageObject ): TextContent[] {
+function updatePageToolResult( result: { result: string; pageid: number; title: string; oldrevid: number; newrevid: number } ): TextContent[] {
 	return [
 		{
 			type: 'text',
@@ -73,13 +97,10 @@ function updatePageToolResult( result: MwRestApiPageObject ): TextContent[] {
 			type: 'text',
 			text: [
 				'Page object:',
-				`Page ID: ${ result.id }`,
+				`Page ID: ${ result.pageid }`,
 				`Title: ${ result.title }`,
-				`Latest revision ID: ${ result.latest.id }`,
-				`Latest revision timestamp: ${ result.latest.timestamp }`,
-				`Content model: ${ result.content_model }`,
-				`License: ${ result.license.url } ${ result.license.title }`,
-				`HTML URL: ${ result.html_url }`
+				`Latest revision ID: ${ result.newrevid }`,
+				`Result: ${ result.result }`
 			].join( '\n' )
 		}
 	];

@@ -7,7 +7,7 @@ async function fetchCore(
 	options?: {
 		params?: Record<string, string>;
 		headers?: Record<string, string>;
-		body?: Record<string, unknown>;
+		body?: Record<string, unknown> | string;
 		method?: string;
 	}
 ): Promise<Response> {
@@ -37,7 +37,9 @@ async function fetchCore(
 		method: options?.method || 'GET'
 	};
 	if ( options?.body ) {
-		fetchOptions.body = JSON.stringify( options.body );
+		// If body is already a string (form data), use it directly
+		// Otherwise, stringify it (for JSON)
+		fetchOptions.body = typeof options.body === 'string' ? options.body : JSON.stringify( options.body );
 	}
 	const response = await fetch( url, fetchOptions );
 	if ( !response.ok ) {
@@ -153,4 +155,52 @@ export function formatEditComment( tool: string, comment?: string ): string {
 		return `Automated edit ${ suffix }`;
 	}
 	return `${ comment } ${ suffix }`;
+}
+
+export async function getCsrfToken(): Promise<string | null> {
+	const token = oauthToken();
+	if ( !token ) {
+		return null;
+	}
+	
+	try {
+		const response = await makeAuthenticatedApiRequest<{ query: { tokens: { csrftoken: string } } }>( {
+			action: 'query',
+			meta: 'tokens',
+			type: 'csrf',
+			format: 'json'
+		} );
+		
+		if ( response && response.query && response.query.tokens && response.query.tokens.csrftoken ) {
+			return response.query.tokens.csrftoken;
+		}
+		return null;
+	} catch ( error ) {
+		console.error( 'Error getting CSRF token:', error );
+		return null;
+	}
+}
+
+export async function makeAuthenticatedApiRequest<T>(
+	params: Record<string, string>
+): Promise<T | null> {
+	const token = oauthToken();
+	if ( !token ) {
+		throw new Error( 'OAuth token required for authenticated requests' );
+	}
+	
+	const headers: Record<string, string> = {
+		'Authorization': `Bearer ${ token }`,
+		'Content-Type': 'application/x-www-form-urlencoded'
+	};
+	
+	// Convert params to URL-encoded form data
+	const formData = new URLSearchParams( params ).toString();
+	
+	const response = await fetchCore( `${ wikiServer() }${ scriptPath() }/api.php`, {
+		method: 'POST',
+		headers: headers,
+		body: formData
+	} );
+	return ( await response.json() ) as T;
 }
