@@ -3,6 +3,9 @@
 
 An MCP (Model Context Protocol) server that enables Large Language Model (LLM) clients to interact with any MediaWiki wiki.
 
+This fork attempts to solve issues with authentication with locally hosted wikimedia server. It is written by AI in cursor, and
+should probably not be used for accessing online wikimedia websites.
+
 ## Feature
 
 ### Tools
