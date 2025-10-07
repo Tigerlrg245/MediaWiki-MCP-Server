@@ -50,9 +50,11 @@ export function setWikiTool( server: McpServer ): RegisteredTool {
 		} ): Promise<CallToolResult> => {
 			const url = new URL( args.wikiUrl );
 			const allWikis = getAllWikis();
+			// Prefer the host (includes port) to uniquely identify the wiki
+			const requestedKey = url.host;
 
-			if ( allWikis[ url.hostname ] ) {
-				setCurrentWiki( url.host );
+			if ( allWikis[ requestedKey ] ) {
+				setCurrentWiki( requestedKey );
 				const newConfig = getCurrentWikiConfig();
 				return {
 					content: [ {
@@ -66,13 +68,19 @@ export function setWikiTool( server: McpServer ): RegisteredTool {
 			const wikiInfo = await getWikiInfo( wikiServer, args.wikiUrl );
 
 			if ( wikiInfo !== null ) {
-				updateWikiConfig( wikiInfo.servername, {
+				// Use host (including port) derived from the server URL as the config key
+				const discoveredKey = new URL( wikiInfo.server ).host;
+				const existing = allWikis[ discoveredKey ];
+				updateWikiConfig( discoveredKey, {
 					sitename: wikiInfo.sitename,
 					server: wikiInfo.server,
 					articlepath: wikiInfo.articlepath,
-					scriptpath: wikiInfo.scriptpath
+					scriptpath: wikiInfo.scriptpath,
+					// Preserve token/private if previously configured for this host
+					token: existing?.token ?? null,
+					private: existing?.private ?? false
 				} );
-				setCurrentWiki( wikiInfo.servername );
+				setCurrentWiki( discoveredKey );
 
 				const newConfig = getCurrentWikiConfig();
 				return {

@@ -34,12 +34,26 @@ async function handleCreatePageTool(
 	contentModel?: string
 ): Promise<CallToolResult> {
 	try {
-		// Get CSRF token first
-		const csrfToken = await getCsrfToken();
+		// Get CSRF token first with retry logic
+		let csrfToken: string | null = null;
+		let retryCount = 0;
+		const maxRetries = 3;
+		
+		while ( !csrfToken && retryCount < maxRetries ) {
+			csrfToken = await getCsrfToken();
+			if ( !csrfToken ) {
+				retryCount++;
+				if ( retryCount < maxRetries ) {
+					// Wait a bit before retrying (reduced delay for faster retries)
+					await new Promise( resolve => setTimeout( resolve, 500 ) );
+				}
+			}
+		}
+		
 		if ( !csrfToken ) {
 			return {
 				content: [
-					{ type: 'text', text: 'Failed to create page: Could not obtain CSRF token' } as TextContent
+					{ type: 'text', text: 'Failed to create page: Could not obtain CSRF token after multiple attempts' } as TextContent
 				],
 				isError: true
 			};

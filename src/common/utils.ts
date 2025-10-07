@@ -164,13 +164,13 @@ export async function getCsrfToken(): Promise<string | null> {
 	}
 	
 	try {
+		await new Promise( ( resolve ) => setTimeout( resolve, 2000 ) );
 		const response = await makeAuthenticatedApiRequest<{ query: { tokens: { csrftoken: string } } }>( {
 			action: 'query',
 			meta: 'tokens',
 			type: 'csrf',
 			format: 'json'
 		} );
-		
 		if ( response && response.query && response.query.tokens && response.query.tokens.csrftoken ) {
 			return response.query.tokens.csrftoken;
 		}

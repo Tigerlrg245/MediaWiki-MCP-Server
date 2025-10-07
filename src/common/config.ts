@@ -56,14 +56,55 @@ const defaultConfig: Config = {
 	}
 };
 
-const configPath = process.env.CONFIG || 'config.json';
+// Try to find the config file with fallback logic
+function findConfigPath(): string {
+	// First, try the environment variable
+	if ( process.env.CONFIG ) {
+		return process.env.CONFIG;
+	}
+	
+	// Fallback: try to find config files in common locations
+	// Handle different working directory scenarios when run through Cursor
+	const possiblePaths = [
+		'config-local.json',
+		'config.json',
+		'MediaWiki-MCP-Server/config-local.json',
+		'MediaWiki-MCP-Server/config.json',
+		'../MediaWiki-MCP-Server/config-local.json',
+		'../MediaWiki-MCP-Server/config.json',
+		'../../MediaWiki-MCP-Server/config-local.json',
+		'../../MediaWiki-MCP-Server/config.json',
+		// Handle absolute paths that might be in the config
+		'C:\\Users\\om_pe\\Downloads\\mediawiki-1.44.2\\MediaWiki-MCP-Server\\config-local.json',
+		'C:/Users/om_pe/Downloads/mediawiki-1.44.2/MediaWiki-MCP-Server/config-local.json'
+	];
+	
+	for ( const path of possiblePaths ) {
+		if ( fs.existsSync( path ) ) {
+			return path;
+		}
+	}
+	
+	// If no config file found, try to use the hardcoded path as a last resort
+	const hardcodedPath = 'C\\Users\\om_pe\\Downloads\\mediawiki-1.44.2\\MediaWiki-MCP-Server\\config-local.json';
+	if ( fs.existsSync( hardcodedPath ) ) {
+		return hardcodedPath;
+	}
+	
+	// Final fallback
+	return 'config.json';
+}
+
+const configPath = findConfigPath();
 
 function loadConfigFromFile(): Config {
 	if ( !fs.existsSync( configPath ) ) {
 		return defaultConfig;
 	}
+
 	const rawData = fs.readFileSync( configPath, 'utf-8' );
-	return JSON.parse( rawData ) as Config;
+	const parsedConfig = JSON.parse( rawData ) as Config;
+	return parsedConfig;
 }
 
 const config = loadConfigFromFile();
